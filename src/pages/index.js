@@ -8,9 +8,10 @@ import { main } from '@/shader/index'
 
 export default function Home() {
   const inputRef = useRef(null)
+  const images = ['mosss-dpt_swin2_large_384.png', 'mosi-dpt_swin2_large_384.png']
 
   useEffect(() => {
-    main(inputRef)
+    main(inputRef, `/${images[0]}`)
   }, [])
 
   return (
