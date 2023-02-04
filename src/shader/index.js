@@ -1,13 +1,10 @@
 var twgl = require("twgl.js")
 
-export const main = (el) => {
+export async function main(el, url) {
   const gl = el.current.getContext('webgl');
-  const ext = gl.getExtension('OES_standard_derivatives');
-  if (!ext) {
-    return alert('need OES_standard_derivatives');
-  }
 
   const m4 = twgl.m4;
+  const v3 = twgl.v3;
   const vs = `
   attribute vec4 position;
   attribute vec2 texcoord;
@@ -17,32 +14,34 @@ export const main = (el) => {
   uniform mat4 view;
   uniform mat4 model;
 
-  varying vec3 v_worldPosition;
+  varying vec2 v_texcoord;
 
   void main() {
     float displacementScale = 10.0;
-    float displacement = texture2D(displacementMap, texcoord).r * displacementScale;
+    float displacement = texture2D(displacementMap, texcoord).a * displacementScale;
     vec4 displacedPosition = position + vec4(0, displacement, 0, 0);
     gl_Position = projection * view * model * displacedPosition;
-    v_worldPosition = (model * displacedPosition).xyz;
+    v_texcoord = texcoord;
   }
   `;
 
   const fs = `
-  #extension GL_OES_standard_derivatives : enable
-
   precision highp float;
 
-  varying vec3 v_worldPosition;
+  varying vec2 v_texcoord;
+
+  uniform sampler2D displacementMap;
 
   void main() {
-    vec3 dx = dFdx(v_worldPosition);
-    vec3 dy = dFdy(v_worldPosition);
-    vec3 normal = normalize(cross(dy, dx));
+    // should make this a uniform so it's shared
+    float displacementScale = 10.0;
+
+    vec3 data = texture2D(displacementMap, v_texcoord).rgb;
+    vec3 normal = data * 2. - 1.;
 
     // just hard code lightDir and color
     // to make it easy
-    vec3 lightDir = normalize(vec3(1, -2, 3));
+    vec3 lightDir = normalize(vec3(1, -3, 2));
     float light = dot(lightDir, normal);
     vec3 color = vec3(0.3, 1, 0.1);
 
@@ -63,15 +62,46 @@ export const main = (el) => {
       64,  // quads down
   );
 
+  const img = await loadImage(url);
+
+  // get image data
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.canvas.width = img.width;
+  ctx.canvas.height = img.height;
+  ctx.drawImage(img, 0, 0);
+  const imgData = ctx.getImageData(0, 0, img.width, img.height);
+
+  // generate normals from height data
+  const displacementScale = 10;
+  const data = new Uint8Array(imgData.data.length);
+  for (let z = 0; z < imgData.height; ++z) {
+    for (let x = 0; x < imgData.width; ++x) {
+      const off = (z * img.width + x) * 4;
+      const h0 = imgData.data[off];
+      const h1 = imgData.data[off + 4] || 0;  // being lazy at edge
+      const h2 = imgData.data[off + imgData.width * 4] || 0; // being lazy at edge
+      const p0 = [x    , h0 * displacementScale / 255, z    ];
+      const p1 = [x + 1, h1 * displacementScale / 255, z    ];
+      const p2 = [x    , h2 * displacementScale / 255, z + 1];
+      const v0 = v3.normalize(v3.subtract(p1, p0));
+      const v1 = v3.normalize(v3.subtract(p2, p0));
+      const normal = v3.normalize(v3.cross(v0, v1));
+      data[off + 0] = (normal[0] * 0.5 + 0.5) * 255;
+      data[off + 1] = (normal[1] * 0.5 + 0.5) * 255;
+      data[off + 2] = (normal[2] * 0.5 + 0.5) * 255;
+      data[off + 3] = h0;
+    }
+  }
+
   const tex = twgl.createTexture(gl, {
-    src: 'mosss-dpt_swin2_large_384.png',
-    minMag: gl.NEAREST,
+    src: data,
+    width: imgData.width,
+    minMag: gl.LINEAR,
     wrap: gl.CLAMP_TO_EDGE,
   });
 
   function render(time) {
     time *= 0.001;  // seconds
-    // time = 0.001;
 
     twgl.resizeCanvasToDisplaySize(gl.canvas);
 
@@ -111,4 +141,14 @@ export const main = (el) => {
     requestAnimationFrame(render);
   }
   requestAnimationFrame(render);
+}
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = _ => resolve(img);
+    img.onerror = reject;
+    img.crossOrigin = 'anonymous';
+    img.src = url;
+  });
 }
