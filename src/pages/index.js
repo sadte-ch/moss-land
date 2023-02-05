@@ -1,22 +1,37 @@
 import styles from '@/styles/Home.module.css'
 
-import { useRef, useEffect } from 'react';
+import React, { Suspense } from 'react'
 
-import { main } from '@/shader/index'
+import { Canvas } from '@react-three/fiber'
+import { OrbitControls } from '@react-three/drei'
 
-// const inter = Inter({ subsets: ['latin'] })
+import Plane from '@/components/Plane'
 
 export default function Home() {
-  const inputRef = useRef(null)
-  const images = ['mosss-dpt_swin2_large_384.png', 'mosi-dpt_swin2_large_384.png']
+  const images = importAll(require.context('@/assets', false, /\.(png|jpe?g|svg)$/))
+  const slides = [0,2,4]
+  let index = 4
 
-  useEffect(() => {
-    main(inputRef, `/${images[0]}`)
-  }, [])
+  // const randomiseSlide = () => {
+  //   let rand = Math.floor(Math.random() * slides.length)
+  //   index = slides[rand]
+  // }
+  // randomiseSlide()
 
   return (
     <>
-      <canvas className={styles.canvas} ref={inputRef}></canvas>
+      <Canvas className={styles.canvas} concurrent="true">
+        <OrbitControls />
+        <ambientLight intensity={0.5} />
+        <directionalLight position={[-2,5,2]} intensity={1} />
+        <Suspense fallback={null}>
+          <Plane images={images} index={index} />
+        </Suspense>
+      </Canvas>
     </>
   )
+}
+
+function importAll(r) {
+  return r.keys().map(r)
 }
